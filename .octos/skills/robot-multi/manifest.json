@@ -1,0 +1,37 @@
+{
+  "name": "robot-multi",
+  "version": "0.1.0",
+  "author": "octos",
+  "description": "Control multiple AKA-00 robots simultaneously via natural language. Supports broadcast to all robots or targeting specific robots by name.",
+  "timeout_secs": 30,
+  "requires_network": true,
+  "tools": [
+    {
+      "name": "robot_multi_control",
+      "description": "Send a motion command to multiple AKA-00 robots simultaneously. Pass [\"all\"] in robots to broadcast to all robots, or a specific list like [\"robot1\", \"robot2\"]. Sends requests in parallel and returns a summary of each robot's result. Supports actions: 前进(up), 后退(down), 左转(left), 右转(right), 停止(stop), 抓取(grab), 释放(release).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "robots": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of robot names to control. Use [\"all\"] to broadcast to all robots. Example: [\"robot1\", \"robot2\"] or [\"all\"]"
+          },
+          "action": {
+            "type": "string",
+            "description": "The motion action in Chinese or English. Valid: 前进/up, 后退/down, 左转/left, 右转/right, 停止/stop, 抓取/grab, 释放/release"
+          },
+          "speed": {
+            "type": "integer",
+            "description": "Optional speed value (0-50)"
+          },
+          "time": {
+            "type": "integer",
+            "description": "Optional duration in milliseconds, e.g. 2000 for 2 seconds"
+          }
+        },
+        "required": ["robots", "action"]
+      }
+    }
+  ]
+}
