@@ -1,7 +1,7 @@
-/home/dora/.octos/skills/robot-multi/target/release/deps/futures_sink-390589769b430279.d: /home/dora/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-sink-0.3.32/src/lib.rs
+/home/dora/.octos/skills/skills/robot-multi/target/release/deps/futures_sink-390589769b430279.d: /home/dora/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-sink-0.3.32/src/lib.rs
 
-/home/dora/.octos/skills/robot-multi/target/release/deps/libfutures_sink-390589769b430279.rlib: /home/dora/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-sink-0.3.32/src/lib.rs
+/home/dora/.octos/skills/skills/robot-multi/target/release/deps/libfutures_sink-390589769b430279.rlib: /home/dora/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-sink-0.3.32/src/lib.rs
 
-/home/dora/.octos/skills/robot-multi/target/release/deps/libfutures_sink-390589769b430279.rmeta: /home/dora/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-sink-0.3.32/src/lib.rs
+/home/dora/.octos/skills/skills/robot-multi/target/release/deps/libfutures_sink-390589769b430279.rmeta: /home/dora/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-sink-0.3.32/src/lib.rs
 
 /home/dora/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/futures-sink-0.3.32/src/lib.rs:

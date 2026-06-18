@@ -3,6 +3,8 @@ use serde_json::json;
 use std::io::Read;
 use std::path::PathBuf;
 use std::time::Duration;
+use native_tls::TlsConnector;
+use tungstenite::Message;
 
 #[derive(Deserialize)]
 struct RobotMultiControlInput {
@@ -56,21 +58,108 @@ fn translate_action(cn: &str) -> Result<&'static str, String> {
         "停止" | "stop" => Ok("stop"),
         "抓取" | "grab" => Ok("grab"),
         "释放" | "release" => Ok("release"),
+        "捡球" | "捡网球" | "pickup_tennis" => Ok("pickup_tennis"),
+        "停止捡球" | "stop_demo" => Ok("stop_demo"),
         _ => Err(format!(
-            "Unknown action '{cn}'. Valid: 前进/后退/左转/右转/停止/抓取/释放"
+            "Unknown action '{cn}'. Valid: 前进/后退/左转/右转/停止/抓取/释放/捡球/停止捡球"
         )),
     }
 }
 
-fn build_url(ip: &str, action_en: &str, speed: Option<i32>, time: Option<u64>) -> String {
-    let mut params = vec![format!("action={}", action_en)];
-    if let Some(s) = speed {
-        params.push(format!("speed={}", s));
+// Returns (steering, throttle) as signed i8
+// steering: negative=left, positive=right, 0=straight
+// throttle: positive=forward, negative=backward, 0=stop
+fn action_to_joystick(action: &str, speed: i32) -> (i8, i8) {
+    let s = speed.clamp(0, 127) as i8;
+    match action {
+        "up"      => (0,  s),
+        "down"    => (0, -s),
+        "left"    => (-s, 0),
+        "right"   => ( s, 0),
+        _         => (0,  0),
     }
-    if let Some(t) = time {
-        params.push(format!("time={}", t));
+}
+
+// Send joystick command via WebSocket. Protocol: [0xAA, steering_i8, throttle_i8]
+// Keeps connection open for `hold_ms` then sends stop, draining server heartbeats.
+fn ws_drive(ip: &str, steering: i8, throttle: i8, hold_ms: u64) -> Result<(), String> {
+    let tcp = std::net::TcpStream::connect(format!("{ip}:443"))
+        .map_err(|e| format!("TCP connect error: {e}"))?;
+    tcp.set_read_timeout(Some(Duration::from_millis(500))).ok();
+    tcp.set_write_timeout(Some(Duration::from_secs(5))).ok();
+
+    let tls = TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| format!("TLS build error: {e}"))?;
+    let tls_stream = tls.connect(ip, tcp)
+        .map_err(|e| format!("TLS handshake error: {e}"))?;
+
+    let url = format!("wss://{}/ws/control", ip);
+    let (mut ws, _) = tungstenite::client(url, tls_stream)
+        .map_err(|e| format!("WS handshake error: {e}"))?;
+
+    // send drive command
+    let msg = vec![0xAAu8, steering as u8, throttle as u8];
+    ws.send(Message::Binary(msg.into()))
+        .map_err(|e| format!("WS send error: {e}"))?;
+
+    // hold connection open, drain incoming heartbeats
+    let deadline = std::time::Instant::now() + Duration::from_millis(hold_ms);
+    while std::time::Instant::now() < deadline {
+        match ws.read() {
+            Ok(_) => {}
+            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(_) => break,
+        }
     }
-    format!("https://{}/api/control?{}", ip, params.join("&"))
+
+    // send stop
+    let stop = vec![0xAAu8, 0u8, 0u8];
+    ws.send(Message::Binary(stop.into())).ok();
+
+    // drain briefly so server sees stop before we drop
+    let drain_until = std::time::Instant::now() + Duration::from_millis(200);
+    while std::time::Instant::now() < drain_until {
+        match ws.read() {
+            Ok(_) => {}
+            Err(_) => break,
+        }
+    }
+
+    Ok(())
+}
+
+// Hold WebSocket connection open for `hold_ms` so demo can drive motors.
+// Drains incoming messages without sending anything.
+fn ws_hold(ip: &str, hold_ms: u64) -> Result<(), String> {
+    let tcp = std::net::TcpStream::connect(format!("{ip}:443"))
+        .map_err(|e| format!("TCP connect error: {e}"))?;
+    tcp.set_read_timeout(Some(Duration::from_millis(500))).ok();
+    tcp.set_write_timeout(Some(Duration::from_secs(5))).ok();
+
+    let tls = TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .map_err(|e| format!("TLS build error: {e}"))?;
+    let tls_stream = tls.connect(ip, tcp)
+        .map_err(|e| format!("TLS handshake error: {e}"))?;
+
+    let url = format!("wss://{}/ws/control", ip);
+    let (mut ws, _) = tungstenite::client(url, tls_stream)
+        .map_err(|e| format!("WS handshake error: {e}"))?;
+
+    let deadline = std::time::Instant::now() + Duration::from_millis(hold_ms);
+    while std::time::Instant::now() < deadline {
+        match ws.read() {
+            Ok(_) => {}
+            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+            Err(tungstenite::Error::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut => {}
+            Err(_) => break,
+        }
+    }
+    Ok(())
 }
 
 fn load_robots_config() -> RobotsConfig {
@@ -106,17 +195,14 @@ fn handle_robot_multi_control(input_json: &str) {
 
     let config = load_robots_config();
 
-    // resolve target list — fail fast on unknown names
+    // resolve target list
     let targets: Vec<RobotEntry> = if input.robots.len() == 1 && input.robots[0] == "all" {
         config.robots
     } else {
         let mut found = Vec::new();
         for name in &input.robots {
             match config.robots.iter().find(|r| r.name == *name) {
-                Some(_) => {
-                    // find returns a ref; collect names then drain config to avoid double-borrow
-                    found.push(name.as_str());
-                }
+                Some(_) => found.push(name.as_str()),
                 None => fail(&format!("Robot '{}' not found in robots.json", name)),
             }
         }
@@ -131,46 +217,80 @@ fn handle_robot_multi_control(input_json: &str) {
         fail("No robots found. Check robots.json or the robots parameter.");
     }
 
-    let speed = input.speed;
-    let time = input.time;
+    // demo actions: pickup_tennis / stop_demo
+    if action_en == "pickup_tennis" || action_en == "stop_demo" {
+        let is_pickup = action_en == "pickup_tennis";
+        let handles: Vec<_> = targets
+            .into_iter()
+            .map(|robot| {
+                let name = robot.name;
+                let ip = robot.ip.clone();
+                std::thread::spawn(move || {
+                    let client = reqwest::blocking::Client::builder()
+                        .timeout(Duration::from_secs(10))
+                        .no_proxy()
+                        .danger_accept_invalid_certs(true)
+                        .build()
+                        .unwrap_or_default();
+                    if is_pickup {
+                        // stop any existing demo first
+                        let _ = client.post(format!("https://{}/api/demo/stop", ip))
+                            .json(&json!({})).send();
+                        std::thread::sleep(Duration::from_millis(500));
+
+                        // start tennis demo
+                        let url = format!("https://{}/api/demo/init", ip);
+                        match client.post(&url).json(&json!({"name": "tennis"})).send() {
+                            Err(e) => return json!({"robot": name, "ip": ip, "success": false, "error": format!("HTTP error: {e}")}),
+                            Ok(resp) => {
+                                let text = resp.text().unwrap_or_default();
+                                if text.contains("error") {
+                                    return json!({"robot": name, "ip": ip, "success": false, "error": text});
+                                }
+                            }
+                        }
+                        std::thread::sleep(Duration::from_millis(300));
+
+                        // hold WebSocket connection so demo can drive motors (80s timeout)
+                        match ws_hold(&ip, 80_000) {
+                            Ok(()) => json!({"robot": name, "ip": ip, "success": true, "response": "tennis demo completed"}),
+                            Err(e) => json!({"robot": name, "ip": ip, "success": false, "error": e}),
+                        }
+                    } else {
+                        let url = format!("https://{}/api/demo/stop", ip);
+                        match client.post(&url).json(&json!({})).send() {
+                            Ok(resp) => json!({"robot": name, "ip": ip, "success": true, "response": resp.text().unwrap_or_default().trim().to_string()}),
+                            Err(e) => json!({"robot": name, "ip": ip, "success": false, "error": format!("HTTP error: {e}")}),
+                        }
+                    }
+                })
+            })
+            .collect();
+        return finish(handles);
+    }
+
+    let speed = input.speed.unwrap_or(80);
+    let time_ms = input.time.unwrap_or(2000);
+    let (steering, throttle) = action_to_joystick(action_en, speed);
 
     let handles: Vec<_> = targets
         .into_iter()
         .map(|robot| {
-            let url = build_url(&robot.ip, action_en, speed, time);
             let name = robot.name;
             let ip = robot.ip;
             std::thread::spawn(move || {
-                let client = reqwest::blocking::Client::builder()
-                    .timeout(Duration::from_secs(10))
-                    .build()
-                    .unwrap_or_default();
-                match client.get(&url).send() {
-                    Ok(resp) => match resp.text() {
-                        Ok(text) => json!({
-                            "robot": name,
-                            "ip": ip,
-                            "success": true,
-                            "response": text.trim().to_string()
-                        }),
-                        Err(e) => json!({
-                            "robot": name,
-                            "ip": ip,
-                            "success": false,
-                            "error": format!("Failed to read response: {e}")
-                        }),
-                    },
-                    Err(e) => json!({
-                        "robot": name,
-                        "ip": ip,
-                        "success": false,
-                        "error": format!("HTTP request failed: {e}")
-                    }),
+                match ws_drive(&ip, steering, throttle, time_ms) {
+                    Ok(()) => json!({"robot": name, "ip": ip, "success": true, "response": "ok"}),
+                    Err(e) => json!({"robot": name, "ip": ip, "success": false, "error": e}),
                 }
             })
         })
         .collect();
 
+    finish(handles);
+}
+
+fn finish(handles: Vec<std::thread::JoinHandle<serde_json::Value>>) {
     let results: Vec<serde_json::Value> = handles
         .into_iter()
         .map(|h| h.join().unwrap_or_else(|_| json!({"success": false, "error": "thread panicked"})))
@@ -194,10 +314,6 @@ fn handle_robot_multi_control(input_json: &str) {
 
     println!(
         "{}",
-        json!({
-            "output": summary,
-            "success": any_success,
-            "results": results
-        })
+        json!({"output": summary, "success": any_success, "results": results})
     );
 }
