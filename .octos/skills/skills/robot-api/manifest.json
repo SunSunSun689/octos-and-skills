@@ -1,0 +1,36 @@
+{
+  "name": "robot-api",
+  "version": "2.0.0",
+  "author": "octos",
+  "description": "Send natural-language robot commands directly to the AKA-00 car via HTTP. Supports 前进/后退/左转/右转/停止/抓取/释放 with optional speed and time.",
+  "timeout_secs": 15,
+  "requires_network": true,
+  "tools": [
+    {
+      "name": "robot_control",
+      "description": "Send a natural-language robot control command to the AKA-00 car via HTTP. Constructs the full URL from the provided IP and makes a GET request. Returns the car's response. Supports actions: 前进(up), 后退(down), 左转(left), 右转(right), 停止(stop), 抓取(grab), 释放(release). Optionally accepts speed (0-50) and time (in milliseconds).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "ip": {
+            "type": "string",
+            "description": "The IP address of the car, e.g. 192.168.0.107"
+          },
+          "action": {
+            "type": "string",
+            "description": "The robot action in Chinese or English. Valid: 前进/up, 后退/down, 左转/left, 右转/right, 停止/stop, 抓取/grab, 释放/release"
+          },
+          "speed": {
+            "type": "integer",
+            "description": "Optional speed value (0-50)"
+          },
+          "time": {
+            "type": "integer",
+            "description": "Optional duration in milliseconds, e.g. 10000 for 10 seconds"
+          }
+        },
+        "required": ["ip", "action"]
+      }
+    }
+  ]
+}
