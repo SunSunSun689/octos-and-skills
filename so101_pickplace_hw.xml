@@ -1,0 +1,18 @@
+<mujoco model="so101_hw">
+  <!-- Wrapper: adds a free object body so arm_skills.py can use its
+       standard object-first layout (free joint at qpos[0:7], arm at qpos[7:12]).
+       Includes the calibration model unchanged. -->
+  <compiler angle="radian" meshdir="mjcf/so101/assets" autolimits="true"/>
+  <include file="mjcf/so101/so101_new_calib_nocompiler.xml"/>
+  <worldbody>
+    <body name="object" pos="0.3 0 0.02">
+      <joint name="obj_tx" type="slide" axis="1 0 0"/>
+      <joint name="obj_ty" type="slide" axis="0 1 0"/>
+      <joint name="obj_tz" type="slide" axis="0 0 1"/>
+      <joint name="obj_rx" type="hinge" axis="1 0 0"/>
+      <joint name="obj_ry" type="hinge" axis="0 1 0"/>
+      <joint name="obj_rz" type="hinge" axis="0 0 1"/>
+      <geom type="box" size="0.025 0.025 0.025" rgba="0.8 0.2 0.2 1"/>
+    </body>
+  </worldbody>
+</mujoco>

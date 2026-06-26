@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""octos app-skill `main` — robot pick-and-place tools (SO-101 / Adora).
+
+octos spawns this per tool call as `main [--robot <name>] <tool_name>` with the tool
+args as JSON on stdin, and expects a single JSON object on stdout:
+{"output": <str>, "success": <bool>}.
+
+Tools:
+  get_dropoff_position  -> (x, y) of the drop plate from arm_skills.get_plate_position
+  set_gripper(action)   -> open or close the gripper independently
+  move_to(x, y, z)      -> arm_skills IK solve + bridge move_to_joint_state  (no gripper)
+  pick_cube_at(x, y, z) -> arm_skills.pick_at(x, y, z)  (on-demand IK + bridge)
+  place_cube_at(x, y)   -> arm_skills.place_at(x, y)
+
+Cube (x, y, z) coordinates are provided by the caller (LLM / upstream system).
+The Orbbec vision pipeline (vision_service.py) is kept as reference source code but
+is NOT launched or called by this skill.
+
+This `main` is robot-agnostic. Which robot it drives is selected by:
+
+  --robot <name>        shortcut that sets MODEL_NAME + ROBOT_MANIFEST for known robots
+                        (so101, adora). Explicit env vars take precedence.
+
+Or manually via env:
+
+  SKILL_PACK       path to arm_skills.py + manifest.py (default: <skill-dir>)
+  MODEL_NAME       MuJoCo .xml used for IK (default: <skill-dir>/mjcf/so101/so101_new_calib.xml)
+  ROBOT_MANIFEST   arm_skills manifest (default: <skill-dir>/manifests/so101-hw.json)
+  ARM_BRIDGE_URL   bridge base URL (default http://127.0.0.1:8768)
+"""
+import json
+import os
+import sys
+
+
+def _emit(output, success):
+    print(json.dumps({"output": str(output), "success": bool(success)}))
+    sys.exit(0)
+
+
+def main():
+    # Parse optional --robot <name> before the tool name.
+    # Also detect misplaced --robot anywhere in argv and error early.
+    argv = sys.argv[1:]
+    robot = None
+    if "--robot" in argv:
+        idx = argv.index("--robot")
+        if idx != 0:
+            _emit(f"--robot must be the first argument, before the tool name", False)
+        if len(argv) < 2:
+            _emit("--robot requires a robot name (so101, adora)", False)
+        robot = argv[1]
+        argv = argv[2:]
+    tool = argv[0] if argv else ""
+
+    raw = sys.stdin.read() if not sys.stdin.isatty() else ""
+    try:
+        args = json.loads(raw) if raw.strip() else {}
+    except json.JSONDecodeError:
+        _emit(f"invalid JSON args on stdin for '{tool}'", False)
+
+    # Bridge + skill_pack defaults — all self-contained in this skill directory
+    skill_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # --robot shortcut: auto-select MODEL_NAME + ROBOT_MANIFEST for known robots.
+    # Explicit env vars take precedence over the shortcut.
+    KNOWN_ROBOTS = {
+        "so101": {
+            "MODEL_NAME": os.path.join(skill_dir, "mjcf/so101/so101_new_calib.xml"),
+            "ROBOT_MANIFEST": os.path.join(skill_dir, "manifests/so101-hw.json"),
+        },
+        "adora": {
+            "MODEL_NAME": os.path.join(skill_dir, "mjcf/adora/adora.xml"),
+            "ROBOT_MANIFEST": os.path.join(skill_dir, "manifests/adora-hw.json"),
+        },
+    }
+    if robot and robot in KNOWN_ROBOTS:
+        for k, v in KNOWN_ROBOTS[robot].items():
+            os.environ.setdefault(k, v)
+    elif robot:
+        _emit(f"unknown robot '{robot}'. Known: {', '.join(sorted(KNOWN_ROBOTS))}", False)
+
+    os.environ.setdefault("ARM_BRIDGE_URL", "http://127.0.0.1:8768")
+    os.environ.setdefault("SKILL_PACK", skill_dir)
+    os.environ.setdefault("MODEL_NAME", os.path.join(skill_dir, "mjcf/so101/so101_new_calib.xml"))
+    os.environ.setdefault("ROBOT_MANIFEST", os.path.join(skill_dir, "manifests/so101-hw.json"))
+    skill_pack = os.environ["SKILL_PACK"]
+    sys.path.insert(0, skill_pack)
+
+    # arm_skills is needed for all tools (pick, place, dropoff)
+    try:
+        import arm_skills  # needs MODEL_NAME + ROBOT_MANIFEST in env
+    except Exception as exc:
+        _emit(f"skill pack not importable from SKILL_PACK={skill_pack} ({exc}); "
+              f"set SKILL_PACK, MODEL_NAME, ROBOT_MANIFEST", False)
+
+    # Persist held-object state (pick -> place) across octos-spawned processes.
+    # State is scoped per-robot to prevent cross-robot contamination.
+    resolved_robot = robot if robot else "so101"
+    state_file = os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                              f"octos_grasp_so101-pick-cube_{resolved_robot}.json")
+
+    def _save_grasp_state():
+        import numpy as np
+        st = {
+            "pick_xy": list(arm_skills._pick_xy) if arm_skills._pick_xy is not None else None,
+            "grasp_R": arm_skills._grasp_R.tolist() if arm_skills._grasp_R is not None else None,
+        }
+        try:
+            with open(state_file, "w") as fh:
+                json.dump(st, fh)
+        except OSError:
+            pass
+
+    def _restore_grasp_state():
+        import numpy as np
+        if arm_skills._pick_xy is not None or arm_skills._grasp_R is not None or not os.path.exists(state_file):
+            return
+        try:
+            with open(state_file) as fh:
+                st = json.load(fh)
+            if st.get("pick_xy") is not None:
+                arm_skills._pick_xy = tuple(st["pick_xy"])
+            if st.get("grasp_R") is not None:
+                arm_skills._grasp_R = np.array(st["grasp_R"])
+        except (OSError, ValueError):
+            pass
+
+    try:
+        if tool == "get_dropoff_position":
+            _emit(arm_skills.get_plate_position(), True)
+
+        elif tool == "pick_cube_at":
+            if "x" not in args or "y" not in args or "z" not in args:
+                _emit("pick_cube_at needs numeric 'x', 'y', 'z' (meters)", False)
+            out = arm_skills.pick_at(float(args["x"]), float(args["y"]), float(args["z"]))
+            _save_grasp_state()
+            _emit(out, not str(out).startswith(("ERROR", "WARNING")))
+
+        elif tool == "set_gripper":
+            action = str(args.get("action", "")).lower()
+            if action not in ("open", "close"):
+                _emit("set_gripper needs 'action': 'open' or 'close'", False)
+            if "width" in args:
+                width = float(args["width"])
+            else:
+                width = arm_skills.GRIP_OPEN_W if action == "open" else arm_skills.GRIP_CLOSE_W
+            arm_skills._call(arm_skills.GRIP, width=width)
+            _emit(f"OK: gripper {action} (width={width:.3f}m)", True)
+
+        elif tool == "move_to":
+            if "x" not in args or "y" not in args or "z" not in args:
+                _emit("move_to needs numeric 'x', 'y', 'z' (meters)", False)
+            q = arm_skills._solve([float(args["x"]), float(args["y"]), float(args["z"])],
+                                  arm_skills.HOME.copy())
+            arm_skills._move(q)
+            _emit(f"OK: moved to ({args['x']}, {args['y']}, {args['z']})", True)
+
+        elif tool == "place_cube_at":
+            if "x" not in args or "y" not in args:
+                _emit("place_cube_at needs numeric 'x' and 'y' (meters)", False)
+            _restore_grasp_state()
+            out = arm_skills.place_at(float(args["x"]), float(args["y"]))
+            ok = not str(out).startswith(("ERROR", "WARNING"))
+            if ok:
+                try:
+                    os.remove(state_file)
+                except OSError:
+                    pass
+            _emit(out, ok)
+
+        else:
+            _emit(f"unknown tool '{tool}'", False)
+    except Exception as exc:
+        _emit(f"{tool} failed: {exc}", False)
+
+
+if __name__ == "__main__":
+    main()

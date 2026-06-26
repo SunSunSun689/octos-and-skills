@@ -1,0 +1,40 @@
+{
+  "_comment": "Adora hardware manifest — 1.15× scaled SO-101. Same kinematic chain, same STS3215 servos. Height/grasp/place params scaled; joint angles and gripper params unchanged.",
+
+  "lerobot_class": "lerobot.robots.so_follower.SO101Follower",
+  "robot_id": "adora",
+  "port": "/dev/ttyACM0",
+  "use_degrees": true,
+
+  "num_joints": 5,
+  "arm_qpos_start": 0,
+  "arm_qvel_start": 0,
+  "jnt_range_start": 0,
+  "gripper_slots": 1,
+  "motor_names": ["shoulder_pan", "shoulder_lift", "elbow_flex", "wrist_flex", "wrist_roll"],
+  "gripper_name": "gripper",
+
+  "hold_full_orientation": false,
+  "approach_axis": "x",
+  "approach_sign": 1.0,
+
+  "arm_home": [-0.1849, -0.0729, 0.2071, 1.1853, -0.0031],
+  "signs":   [1, 1, 1, 1, 1],
+  "offsets": [0, 0, 0, 0, 0],
+
+  "grasp_bias": 0.00575,
+  "grasp_z": 0.0345,
+  "place_z": 0.046,
+  "approach_z": 0.138,
+  "lift_zs": [0.069, 0.115, 0.138],
+  "lift_ok_z": 0.0575,
+
+  "grip_open_w": 0.06,
+  "grip_close_w": 0.0,
+  "grip_dwell": 1.5,
+
+  "max_relative_target": 10.0,
+
+  "plate_x": 0.2875,
+  "plate_y": 0.0
+}

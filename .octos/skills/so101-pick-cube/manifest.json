@@ -1,0 +1,40 @@
+{
+  "name": "so101-pick-cube",
+  "version": "0.3.0",
+  "author": "dorarobotics",
+  "description": "Hardware pick-and-place for SO-101 and Adora (1.15× scaled) arms. Cube (x, y, z) coordinates provided by caller — no camera dependency. Use --robot so101|adora to switch. Reuses the SPEC bridge and on-demand MuJoCo IK from arm_skills.py.",
+  "timeout_secs": 120,
+  "requires_network": true,
+  "tools": [
+    {
+      "name": "get_dropoff_position",
+      "description": "Return the (x, y) of the target plate (drop-off zone) in meters, in the robot base frame. Read from the active robot manifest.",
+      "input_schema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "pick_cube_at",
+      "description": "Pick up the cube at (x, y, z) meters in the robot base frame: approach from above, grasp, and lift. Caller must provide all three coordinates.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "x": { "type": "number", "description": "cube x in meters (SO-101 base frame)" },
+          "y": { "type": "number", "description": "cube y in meters" },
+          "z": { "type": "number", "description": "cube z (height) in meters — typically table surface height" }
+        },
+        "required": ["x", "y", "z"]
+      }
+    },
+    {
+      "name": "place_cube_at",
+      "description": "Carry the currently-held cube to (x, y) meters and release. Call pick_cube_at first.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "x": { "type": "number", "description": "place x in meters" },
+          "y": { "type": "number", "description": "place y in meters" }
+        },
+        "required": ["x", "y"]
+      }
+    }
+  ]
+}

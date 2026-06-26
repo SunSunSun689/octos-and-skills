@@ -1,0 +1,34 @@
+{
+  "_comment": "Adora (1.15× SO-101) 5-DOF MuJoCo pick-and-place sim manifest. Same chain, scaled workspace. Gripper approach axis is local +X.",
+  "robot_name": "Adora",
+  "object_noun": "red cube",
+  "num_joints": 5,
+  "arm_qpos_start": 7,
+  "arm_qvel_start": 6,
+  "jnt_range_start": 1,
+  "hold_full_orientation": false,
+  "approach_axis": "x",
+  "approach_sign": 1.0,
+  "arm_home": [
+    0.0,
+    -1.0,
+    1.0,
+    0.8,
+    0.0
+  ],
+  "grasp_bias": 0.0,
+  "grasp_z": 0.0138,
+  "place_z": 0.02875,
+  "approach_z": 0.092,
+  "lift_zs": [
+    0.0575,
+    0.092,
+    0.115
+  ],
+  "lift_ok_z": 0.069,
+  "grip_open_w": 0.06,
+  "grip_close_w": 0.0,
+  "grip_dwell": 2.0,
+  "plate_x": 0.138,
+  "plate_y": 0.0
+}
