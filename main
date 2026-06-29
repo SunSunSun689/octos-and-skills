@@ -181,15 +181,16 @@ def main():
                 result = calibrate_camera_intrinsics(sq_mm)
             except (FileNotFoundError, ValueError) as e:
                 _emit(str(e), False)
-            fx = result["camera_matrix"][0][0]
-            fy = result["camera_matrix"][1][1]
-            cx = result["camera_matrix"][0][2]
-            cy = result["camera_matrix"][1][2]
-            err = result["reprojection_error_px"]
-            _emit(json.dumps({
-                "message": f"Camera calibrated: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}, reproj_err={err:.3f}px",
-                "intrinsics": result,
-            }), True)
+            else:
+                fx = result["camera_matrix"][0][0]
+                fy = result["camera_matrix"][1][1]
+                cx = result["camera_matrix"][0][2]
+                cy = result["camera_matrix"][1][2]
+                err = result["reprojection_error_px"]
+                _emit(json.dumps({
+                    "message": f"Camera calibrated: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}, reproj_err={err:.3f}px",
+                    "intrinsics": result,
+                }), True)
 
         elif tool == "hand_eye_collect":
             from vision.camera import Camera
@@ -221,15 +222,16 @@ def main():
                 result, verification = solve_hand_eye(method)
             except (FileNotFoundError, ValueError) as e:
                 _emit(str(e), False)
-            _emit(json.dumps({
-                "message": (
-                    f"Hand-eye solved ({method}, {result['num_poses']} poses). "
-                    f"Z_table={result['Z_table']:.4f}m. "
-                    f"Target consistency: max_dev={verification['max_deviation_mm']:.1f}mm"
-                ),
-                "calibration": result,
-                "verification": verification,
-            }), True)
+            else:
+                _emit(json.dumps({
+                    "message": (
+                        f"Hand-eye solved ({method}, {result['num_poses']} poses). "
+                        f"Z_table={result['Z_table']:.4f}m. "
+                        f"Target consistency: max_dev={verification['max_deviation_mm']:.1f}mm"
+                    ),
+                    "calibration": result,
+                    "verification": verification,
+                }), True)
 
         elif tool == "grasp_block":
             import time as _time

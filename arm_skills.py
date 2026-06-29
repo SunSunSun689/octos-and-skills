@@ -111,17 +111,17 @@ def _rpy_to_rot(rpy):
     ])
 
 
-def forward_kinematics(joint_angles_deg, with_gripper=False):
+def forward_kinematics(joint_angles_rad, with_gripper=False):
     """FK using the loaded MuJoCo model.
 
     Args:
-        joint_angles_deg: 5 joint angles [pan, lift, elbow, flex, roll] in degrees.
+        joint_angles_rad: 5 joint angles [pan, lift, elbow, flex, roll] in radians (MuJoCo convention).
         with_gripper: If True, use pinch site (tool tip). If False, use gripper (wrist).
 
     Returns:
         dict with position (x,y,z), rotation (3x3), and transform (4x4).
     """
-    q = np.array(joint_angles_deg[:5], dtype=float)
+    q = np.array(joint_angles_rad[:5], dtype=float)
     _d.qpos[:] = 0
     _d.qpos[ARM_QPOS] = q
     mujoco.mj_forward(_m, _d)
@@ -230,6 +230,8 @@ def _solve(xyz, seed, target_R=None, iters=400, pos_w=1.0, rot_w=0.1,
         q = q + dq
         if has_limits:
             q = np.clip(q, lo, hi)
+    if np.linalg.norm(e_pos) > 0.01:
+        return None
     return q
 
 
