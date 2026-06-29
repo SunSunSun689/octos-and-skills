@@ -98,6 +98,50 @@ def _call(verb: str, **args):
         return json.loads(r.read().decode())
 
 
+def _rpy_to_rot(rpy):
+    """Convert roll-pitch-yaw (radians) to 3x3 rotation matrix (no scipy needed)."""
+    roll, pitch, yaw = rpy
+    cr, sr = math.cos(roll), math.sin(roll)
+    cp, sp = math.cos(pitch), math.sin(pitch)
+    cy, sy = math.cos(yaw), math.sin(yaw)
+    return np.array([
+        [cy*cp, cy*sp*sr - sy*cr, cy*sp*cr + sy*sr],
+        [sy*cp, sy*sp*sr + cy*cr, sy*sp*cr - cy*sr],
+        [-sp,   cp*sr,            cp*cr],
+    ])
+
+
+def forward_kinematics(joint_angles_deg, with_gripper=False):
+    """FK using the loaded MuJoCo model.
+
+    Args:
+        joint_angles_deg: 5 joint angles [pan, lift, elbow, flex, roll] in degrees.
+        with_gripper: If True, use pinch site (tool tip). If False, use gripper (wrist).
+
+    Returns:
+        dict with position (x,y,z), rotation (3x3), and transform (4x4).
+    """
+    q = np.array(joint_angles_deg[:5], dtype=float)
+    _d.qpos[:] = 0
+    _d.qpos[ARM_QPOS] = q
+    mujoco.mj_forward(_m, _d)
+
+    if with_gripper:
+        pos = _d.site_xpos[_site].copy()
+        rot = _d.site_xmat[_site].reshape(3, 3).copy()
+    else:
+        wrist_id = mujoco.mj_name2id(_m, mujoco.mjtObj.mjOBJ_BODY, "gripper")
+        pos = _d.xpos[wrist_id].copy()
+        rot = _d.xmat[wrist_id].reshape(3, 3).copy()
+
+    T = np.eye(4)
+    T[:3, :3] = rot
+    T[:3, 3] = pos
+
+    return {"position": (float(pos[0]), float(pos[1]), float(pos[2])),
+            "rotation": rot, "transform": T}
+
+
 def _move(q):
     return _call(MOVE, joints=[float(v) for v in q], control_source="octos")
 
