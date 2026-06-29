@@ -1,0 +1,9 @@
+{
+  "camera_matrix": [[486.2, 0.0, 320.5], [0.0, 468.4, 287.5], [0.0, 0.0, 1.0]],
+  "dist_coeffs": [[0.005, -0.018, 0.003, -0.003, 0.001]],
+  "image_size": [640, 480],
+  "reprojection_error_px": 0.03,
+  "num_images_used": 13,
+  "square_size_mm": 25.0,
+  "chessboard": [9, 6]
+}
