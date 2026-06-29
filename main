@@ -231,6 +231,151 @@ def main():
                 "verification": verification,
             }), True)
 
+        elif tool == "grasp_block":
+            import time as _time
+            import numpy as _np
+            from vision.camera import Camera
+            from vision.block_detector import detect_blocks
+
+            color = str(args.get("color", "yellow"))
+            he_file = os.path.join(skill_dir, "calibration", "hand_eye.json")
+            if not os.path.exists(he_file):
+                _emit("No hand-eye calibration. Run hand_eye_collect (6+ poses) then hand_eye_solve first.", False)
+            with open(he_file) as f:
+                calib = json.load(f)
+            if not calib or "T_cam_in_wrist" not in calib:
+                _emit("hand_eye.json is empty. Run hand_eye_solve first.", False)
+
+            T_cam_rpy = calib["T_cam_in_wrist"]["rpy"]
+            T_cam_trans = calib["T_cam_in_wrist"]["translation"]
+            fx, fy = calib["camera"]["fx"], calib["camera"]["fy"]
+            cx0, cy0 = calib["camera"]["cx"], calib["camera"]["cy"]
+            Z_TABLE = calib.get("Z_table", -0.125)
+
+            R_cam = arm_skills._rpy_to_rot(T_cam_rpy)
+            T_cam_in_wrist = _np.eye(4)
+            T_cam_in_wrist[:3, :3] = R_cam
+            T_cam_in_wrist[:3, 3] = T_cam_trans
+
+            # 1. Home + open gripper
+            arm_skills._call(arm_skills.NAMED, name="home", control_source="octos")
+            arm_skills._call(arm_skills.GRIP, width=arm_skills.GRIP_OPEN_W)
+            _time.sleep(1.5)
+
+            # 2. Detect block
+            cam = Camera()
+            try:
+                frame = cam.read()
+            except Exception:
+                cam.close()
+                _emit("Camera read failed. Check USB connection.", False)
+            blocks = detect_blocks(frame, [color])
+            if not blocks:
+                cam.close()
+                _emit(f"No {color} block detected from search position", False)
+
+            block = max(blocks, key=lambda b: b["width"] * b["height"])
+            cx, cy = block["cx"], block["cy"]
+
+            # 3. Pixel -> world via ray-plane intersection
+            jf = "/tmp/so101_last_joints.json"
+            if not os.path.exists(jf):
+                cam.close()
+                _emit("No joint angles available. Arm may not have moved yet.", False)
+            with open(jf) as f:
+                cur_joints = json.load(f)
+            j5 = [cur_joints[k] for k in ["shoulder_pan", "shoulder_lift",
+                    "elbow_flex", "wrist_flex", "wrist_roll"]]
+            fk = arm_skills.forward_kinematics(j5, with_gripper=False)
+            T_base_to_cam = fk["transform"] @ T_cam_in_wrist
+
+            dx, dy = (cx - cx0) / fx, (cy - cy0) / fy
+            a = T_base_to_cam[2, 0] * dx + T_base_to_cam[2, 1] * dy + T_base_to_cam[2, 2]
+            b = Z_TABLE - T_base_to_cam[2, 3]
+
+            if abs(a) < 1e-6:
+                cam.close()
+                _emit("Camera ray parallel to table plane — cannot compute block position", False)
+            lam = b / a
+            if lam <= 0:
+                cam.close()
+                _emit(f"Block behind camera (lambda={lam:.2f}) — check calibration", False)
+
+            if cx > cx0:
+                Z_EFF = Z_TABLE - 0.020
+                b_r = Z_EFF - T_base_to_cam[2, 3]
+                lam_r = b_r / a
+                if lam_r <= 0:
+                    cam.close()
+                    _emit(f"Block behind camera (right, lambda={lam_r:.2f})", False)
+                P_base = T_base_to_cam @ _np.array([lam_r*dx, lam_r*dy, lam_r, 1.0])
+                X_block, Y_block = P_base[0] - 0.005, P_base[1] + 0.085
+            else:
+                Z_EFF = Z_TABLE
+                P_base = T_base_to_cam @ _np.array([lam*dx, lam*dy, lam, 1.0])
+                X_block, Y_block = P_base[0] - 0.025, P_base[1] + 0.015
+
+            # 4. IK to block
+            target = (float(X_block), float(Y_block), float(Z_EFF) + 0.02)
+            ik = arm_skills._solve(list(target), arm_skills.HOME.copy())
+            if ik is None:
+                cam.close()
+                _emit(f"IK failed for target {target}", False)
+
+            # 5. Move + grasp
+            arm_skills._move(ik)
+            _time.sleep(3.0)
+            arm_skills._call(arm_skills.GRIP, width=arm_skills.GRIP_CLOSE_W)
+            _time.sleep(3.0)
+
+            # 6. Lift
+            lift_ik = arm_skills._solve(
+                [float(X_block), float(Y_block), float(Z_EFF) + 0.07], ik)
+            if lift_ik is not None:
+                arm_skills._move(lift_ik)
+                _time.sleep(2.0)
+
+            arm_skills._call(arm_skills.NAMED, name="home", control_source="octos")
+            _time.sleep(3.0)
+
+            # 7. Detect drop box and release
+            drop_frame = cam.read()
+            drop_blocks = detect_blocks(drop_frame, ["black"])
+            cam.close()
+
+            dropped = False
+            if drop_blocks:
+                bb = max(drop_blocks, key=lambda b: b["width"] * b["height"])
+                with open(jf) as f:
+                    dj = json.load(f)
+                j5d = [dj[k] for k in ["shoulder_pan", "shoulder_lift",
+                        "elbow_flex", "wrist_flex", "wrist_roll"]]
+                fk_d = arm_skills.forward_kinematics(j5d, with_gripper=False)
+                T_bc_d = fk_d["transform"] @ T_cam_in_wrist
+                dx_d = (bb["cx"] - cx0) / fx
+                dy_d = (bb["cy"] - cy0) / fy
+                Z_DROP = -0.02
+                a_d = T_bc_d[2,0]*dx_d + T_bc_d[2,1]*dy_d + T_bc_d[2,2]
+                lam_d = (Z_DROP - T_bc_d[2,3]) / a_d
+                P_d = T_bc_d @ _np.array([lam_d*dx_d, lam_d*dy_d, lam_d, 1.0])
+                drop_ik = arm_skills._solve(
+                    [float(P_d[0]), float(P_d[1]), Z_DROP], j5d)
+                if drop_ik is not None:
+                    arm_skills._move(drop_ik)
+                    _time.sleep(2.0)
+                    arm_skills._call(arm_skills.GRIP, width=arm_skills.GRIP_OPEN_W)
+                    _time.sleep(1.5)
+                    dropped = True
+
+            arm_skills._call(arm_skills.NAMED, name="home", control_source="octos")
+            _emit(json.dumps({
+                "grasped": True, "color": color, "method": "hand_eye_ik",
+                "block_world": [round(float(X_block), 4), round(float(Y_block), 4),
+                                round(float(Z_EFF), 4)],
+                "target_joints": [round(float(x), 2) for x in ik],
+                "dropped": dropped,
+            }), True)
+
         elif tool == "move_to":
             if "x" not in args or "y" not in args or "z" not in args:
                 _emit("move_to needs numeric 'x', 'y', 'z' (meters)", False)

@@ -117,6 +117,17 @@
           "method": {"type": "string", "enum": ["tsai", "park", "horaud", "andreff", "daniilidis"]}
         }
       }
+    },
+    {
+      "name": "grasp_block",
+      "description": "Autonomously pick up a colored block using hand-eye calibration. Sequence: home -> detect block via camera -> compute world position (ray-plane intersection) -> IK solve -> grasp -> lift -> detect black drop box -> release. Requires completed hand-eye calibration.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "color": {"type": "string", "enum": ["red", "green", "blue", "yellow", "black"],
+                    "description": "Block color to grasp. Default: yellow."}
+        }
+      }
     }
   ]
 }
