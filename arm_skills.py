@@ -143,7 +143,16 @@ def forward_kinematics(joint_angles_deg, with_gripper=False):
 
 
 def _move(q):
-    return _call(MOVE, joints=[float(v) for v in q], control_source="octos")
+    result = _call(MOVE, joints=[float(v) for v in q], control_source="octos")
+    try:
+        import json as _json
+        with open("/tmp/so101_last_joints.json", "w") as _f:
+            _json.dump({"shoulder_pan": float(q[0]), "shoulder_lift": float(q[1]),
+                        "elbow_flex": float(q[2]), "wrist_flex": float(q[3]),
+                        "wrist_roll": float(q[4])}, _f)
+    except OSError:
+        pass
+    return result
 
 
 def _ball():

@@ -174,6 +174,63 @@ def main():
                 _emit("No chessboard detected. Make sure the 9x6 chessboard is fully visible.", False)
             _emit(json.dumps(result), True)
 
+        elif tool == "calibrate_camera":
+            from calibration.calib_tools import calibrate_camera_intrinsics
+            sq_mm = args.get("square_size_mm", 25)
+            try:
+                result = calibrate_camera_intrinsics(sq_mm)
+            except (FileNotFoundError, ValueError) as e:
+                _emit(str(e), False)
+            fx = result["camera_matrix"][0][0]
+            fy = result["camera_matrix"][1][1]
+            cx = result["camera_matrix"][0][2]
+            cy = result["camera_matrix"][1][2]
+            err = result["reprojection_error_px"]
+            _emit(json.dumps({
+                "message": f"Camera calibrated: fx={fx:.1f}, fy={fy:.1f}, cx={cx:.1f}, cy={cy:.1f}, reproj_err={err:.3f}px",
+                "intrinsics": result,
+            }), True)
+
+        elif tool == "hand_eye_collect":
+            from vision.camera import Camera
+            from calibration.calib_tools import collect_hand_eye_pose
+            sq_mm = args.get("square_size_mm", 25)
+            joints_file = "/tmp/so101_last_joints.json"
+            if not os.path.exists(joints_file):
+                _emit("No joint angles available. Move the arm first with move_to or pick_cube_at.", False)
+            with open(joints_file) as f:
+                joints = json.load(f)
+            cam = Camera()
+            try:
+                frame = cam.read()
+                result = collect_hand_eye_pose(frame, joints, sq_mm)
+            finally:
+                cam.close()
+            if result is None:
+                _emit("No chessboard detected. Chessboard must be fixed on table and visible from current arm pose.", False)
+            _emit(json.dumps({
+                "message": f"Hand-eye pose {result['pose_index'] + 1}/{result['total_poses']} recorded. Total: {result['total_poses']}",
+                **result,
+                "joints": {k: round(v, 2) for k, v in joints.items()},
+            }), True)
+
+        elif tool == "hand_eye_solve":
+            from calibration.calib_tools import solve_hand_eye
+            method = args.get("method", "park")
+            try:
+                result, verification = solve_hand_eye(method)
+            except (FileNotFoundError, ValueError) as e:
+                _emit(str(e), False)
+            _emit(json.dumps({
+                "message": (
+                    f"Hand-eye solved ({method}, {result['num_poses']} poses). "
+                    f"Z_table={result['Z_table']:.4f}m. "
+                    f"Target consistency: max_dev={verification['max_deviation_mm']:.1f}mm"
+                ),
+                "calibration": result,
+                "verification": verification,
+            }), True)
+
         elif tool == "move_to":
             if "x" not in args or "y" not in args or "z" not in args:
                 _emit("move_to needs numeric 'x', 'y', 'z' (meters)", False)

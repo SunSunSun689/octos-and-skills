@@ -87,6 +87,36 @@
           }
         }
       }
+    },
+    {
+      "name": "calibrate_camera",
+      "description": "Run camera intrinsics calibration on all saved chessboard images (captured via capture_chessboard). Requires at least 5 images. Produces camera_intrinsics.json.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "square_size_mm": {"type": "number", "description": "Square size in mm. Default 25."}
+        }
+      }
+    },
+    {
+      "name": "hand_eye_collect",
+      "description": "Record one hand-eye calibration pose. Chessboard must be fixed on table. Arm must be at the desired pose (use move_to first). Reads current joint angles, captures frame, detects chessboard, saves pose pair.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "square_size_mm": {"type": "number", "description": "Square size in mm. Default 25."}
+        }
+      }
+    },
+    {
+      "name": "hand_eye_solve",
+      "description": "Solve AX=XB hand-eye calibration using collected poses. Requires 6+ poses. Saves hand_eye.json. Methods: tsai, park, horaud, andreff, daniilidis (default: park).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "method": {"type": "string", "enum": ["tsai", "park", "horaud", "andreff", "daniilidis"]}
+        }
+      }
     }
   ]
 }
