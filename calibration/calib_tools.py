@@ -174,7 +174,7 @@ def _rotation_to_rpy(R):
 
 
 def solve_hand_eye(method="park"):
-    from arm_skills import forward_kinematics, _rpy_to_rot
+    from arm_skills import forward_kinematics
 
     if not os.path.exists(HAND_EYE_DATA):
         raise FileNotFoundError(f"No hand-eye data file: {HAND_EYE_DATA}")
