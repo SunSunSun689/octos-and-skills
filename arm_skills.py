@@ -70,6 +70,10 @@ LIFT_ZS = cfg.vec("lift_zs", [0.07, 0.13, APPROACH_Z])  # staged-lift heights
 # arms (UR5e/reBot); a small arm (SO-101, ~0.1m max lift) sets this lower via manifest.
 LIFT_OK_Z = cfg.f("lift_ok_z", 0.10)
 
+# Path where _move() persists the last computed joint angles for FK-based
+# camera tools in main. Shared across files; keep in sync with main's usage.
+JOINTS_STATE_FILE = os.path.join(os.environ.get("TMPDIR", "/tmp"), "so101_last_joints.json")
+
 _m = mujoco.MjModel.from_xml_path(os.environ["MODEL_NAME"])
 # Widen joint limits to match physical servo capabilities (Feetech STS3215: ~170°).
 # The XML limits are conservative; real wrist_flex has been observed at 163°.
@@ -121,7 +125,7 @@ def forward_kinematics(joint_angles_rad, with_gripper=False):
     Returns:
         dict with position (x,y,z), rotation (3x3), and transform (4x4).
     """
-    q = np.array(joint_angles_rad[:5], dtype=float)
+    q = np.array(joint_angles_rad[:NUM_JOINTS], dtype=float)
     _d.qpos[:] = 0
     _d.qpos[ARM_QPOS] = q
     mujoco.mj_forward(_m, _d)
@@ -146,7 +150,7 @@ def _move(q):
     result = _call(MOVE, joints=[float(v) for v in q], control_source="octos")
     try:
         import json as _json
-        with open("/tmp/so101_last_joints.json", "w") as _f:
+        with open(JOINTS_STATE_FILE, "w") as _f:
             _json.dump({"shoulder_pan": float(q[0]), "shoulder_lift": float(q[1]),
                         "elbow_flex": float(q[2]), "wrist_flex": float(q[3]),
                         "wrist_roll": float(q[4])}, _f)

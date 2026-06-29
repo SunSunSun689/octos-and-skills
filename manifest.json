@@ -2,7 +2,7 @@
   "name": "so101-pick-cube",
   "version": "0.5.0",
   "author": "dorarobotics",
-  "description": "Hardware pick-and-place for SO-101 and Adora (1.15× scaled) arms. Cube (x, y, z) coordinates provided by caller — no camera dependency. Use --robot so101|adora to switch. Reuses the SPEC bridge and on-demand MuJoCo IK from arm_skills.py.",
+  "description": "Hardware pick-and-place for SO-101 and Adora (1.15× scaled) arms. Supports RGB camera block detection and hand-eye calibration. Use --robot so101|adora to switch. Reuses the SPEC bridge and on-demand MuJoCo IK from arm_skills.py.",
   "timeout_secs": 120,
   "requires_network": true,
   "tools": [
