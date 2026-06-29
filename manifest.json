@@ -1,6 +1,6 @@
 {
   "name": "so101-pick-cube",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "dorarobotics",
   "description": "Hardware pick-and-place for SO-101 and Adora (1.15× scaled) arms. Cube (x, y, z) coordinates provided by caller — no camera dependency. Use --robot so101|adora to switch. Reuses the SPEC bridge and on-demand MuJoCo IK from arm_skills.py.",
   "timeout_secs": 120,
@@ -59,6 +59,33 @@
           "y": { "type": "number", "description": "place y in meters" }
         },
         "required": ["x", "y"]
+      }
+    },
+    {
+      "name": "detect_blocks",
+      "description": "Capture a frame from the RGB camera and detect colored blocks (red, green, blue, yellow, black) using HSV thresholding. Returns each block's color and pixel position. Optionally filter by color.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "colors": {
+            "type": "array",
+            "items": {"type": "string", "enum": ["red", "green", "blue", "yellow", "black"]},
+            "description": "Optional list of colors to detect. If omitted, detects all colors."
+          }
+        }
+      }
+    },
+    {
+      "name": "capture_chessboard",
+      "description": "Detect a 9x6 chessboard in the current camera frame and save the image for camera intrinsics calibration. Run this 5+ times with the chessboard at different positions/angles, then run calibrate_camera.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "square_size_mm": {
+            "type": "number",
+            "description": "Chessboard square size in millimeters. Default 25."
+          }
+        }
       }
     }
   ]

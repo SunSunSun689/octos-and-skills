@@ -148,6 +148,32 @@ def main():
             arm_skills._call(arm_skills.GRIP, width=width)
             _emit(f"OK: gripper {action} (width={width:.3f}m)", True)
 
+        elif tool == "detect_blocks":
+            from vision.camera import Camera
+            from vision.block_detector import detect_blocks
+            target_colors = args.get("colors", None)
+            cam = Camera()
+            try:
+                frame = cam.read()
+                blocks = detect_blocks(frame, target_colors)
+                _emit(json.dumps({"blocks": blocks, "count": len(blocks)}), True)
+            finally:
+                cam.close()
+
+        elif tool == "capture_chessboard":
+            from vision.camera import Camera
+            from calibration.calib_tools import capture_chessboard_image
+            sq_mm = args.get("square_size_mm", 25)
+            cam = Camera()
+            try:
+                frame = cam.read()
+                result = capture_chessboard_image(frame, sq_mm)
+            finally:
+                cam.close()
+            if result is None:
+                _emit("No chessboard detected. Make sure the 9x6 chessboard is fully visible.", False)
+            _emit(json.dumps(result), True)
+
         elif tool == "move_to":
             if "x" not in args or "y" not in args or "z" not in args:
                 _emit("move_to needs numeric 'x', 'y', 'z' (meters)", False)
