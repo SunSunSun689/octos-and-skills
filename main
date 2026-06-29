@@ -258,7 +258,7 @@ def main():
             T_cam_in_wrist[:3, 3] = T_cam_trans
 
             # 1. Home + open gripper
-            arm_skills._call(arm_skills.NAMED, name="home", control_source="octos")
+            arm_skills._move(arm_skills.HOME.copy())
             arm_skills._call(arm_skills.GRIP, width=arm_skills.GRIP_OPEN_W)
             _time.sleep(1.5)
 
@@ -335,7 +335,7 @@ def main():
                 arm_skills._move(lift_ik)
                 _time.sleep(2.0)
 
-            arm_skills._call(arm_skills.NAMED, name="home", control_source="octos")
+            arm_skills._move(arm_skills.HOME.copy())
             _time.sleep(3.0)
 
             # 7. Detect drop box and release
