@@ -1,0 +1,4 @@
+nodes:
+  - id: dora-openlong-bridge
+    path: ros_bridge.py
+
